@@ -1,0 +1,395 @@
+# PIPELINE DEFINITION
+# Name: machine-learning-pipeline
+# Description: An example pipeline that performs data download, preprocessing, training, and evaluation.
+# Inputs:
+#    deployment_metric: str
+#    deployment_metric_threshold: float
+#    project_id: str
+#    query: str
+#    target_column_name: str
+#    test_size: float
+#    train_size: float
+#    valid_size: float
+# Outputs:
+#    evaluate-model-kpi: system.Metrics
+components:
+  comp-evaluate-model:
+    executorLabel: exec-evaluate-model
+    inputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        test_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        deployment_metric:
+          parameterType: STRING
+        deployment_metric_threshold:
+          parameterType: NUMBER_DOUBLE
+        target_column_name:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        kpi:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+      parameters:
+        deploy_flag:
+          parameterType: STRING
+  comp-preprocess-data:
+    executorLabel: exec-preprocess-data
+    inputDefinitions:
+      artifacts:
+        input_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        test_size:
+          parameterType: NUMBER_DOUBLE
+        train_size:
+          parameterType: NUMBER_DOUBLE
+        valid_size:
+          parameterType: NUMBER_DOUBLE
+    outputDefinitions:
+      artifacts:
+        test_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        valid_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+  comp-upload-dataset:
+    executorLabel: exec-upload-dataset
+    inputDefinitions:
+      parameters:
+        project_id:
+          parameterType: STRING
+        query:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        df:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-evaluate-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'pyarrow'\
+          \ 'scikit-learn' 'fsspec' 'gcsfs' 'xgboost' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate_model(\n    test_data: Input[Dataset],\n    model: Input[Model],\
+          \ \n    target_column_name: str,\n    deployment_metric: str,\n    deployment_metric_threshold:\
+          \ float,\n    kpi: Output[Metrics]\n) -> NamedTuple(\n    \"Outputs\",\n\
+          \    [\n        (\"deploy_flag\", str),  \n    ],\n):\n    print(f\"test_data:\
+          \ {test_data}\")\n    print(f\"model: {model}\")\n    print(f\"kpi: {kpi}\"\
+          )\n    print(f\"deployment_metric: {deployment_metric}\")\n    print(f\"\
+          deployment_metric_threshold: {deployment_metric_threshold}\")\n\n    from\
+          \ sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error,\
+          \ mean_absolute_percentage_error\n    import pandas as pd\n    import pickle\n\
+          \    import numpy as np\n\n    test_ds = pd.read_csv(test_data.path)\n \
+          \   target = target_column_name\n\n    x_test = test_ds.drop(columns=target,\
+          \ axis=1)\n    y_test = test_ds[target]\n\n    print(f\"model.path: {model.path}\"\
+          )\n    file_name = model.path + \".pkl\"\n    print(f\"file_name: {file_name}\"\
+          )\n\n    with open(file_name, 'rb') as file:  \n        loaded_model = pickle.load(file)\n\
+          \n    y_pred = loaded_model.predict(x_test)\n    r2 = r2_score(y_true=y_test,\
+          \ y_pred=y_pred)\n    mae = mean_absolute_error(y_true=y_test, y_pred=y_pred)\n\
+          \    mse = mean_squared_error(y_true=y_test, y_pred=y_pred)\n    mape =\
+          \ mean_absolute_percentage_error(y_true=y_test, y_pred=y_pred)\n    rmse\
+          \ = np.sqrt(mse)\n\n    model_metrics = {\n        \"r2\": r2,\n       \
+          \ \"mae\": mae,\n        \"mape\": mape,\n        \"mse\": mse,\n      \
+          \  \"rmse\": rmse\n    }\n\n    print(f\"Adjusted_R2: {r2}\")\n    print(f\"\
+          Mean Absolute Error: {mae}\")\n    print(f\"Mean Absolute Percentage Error:\
+          \ {round(mape, 4) * 100}%\")\n    print(f\"Mean Squared Error: {mse}\")\n\
+          \    print(f\"Root Mean Squared Error: {rmse}\")\n\n    kpi.log_metric(\"\
+          Adjusted_R2\", float(r2))\n    kpi.log_metric(\"Mean Absolute Error\", float(mae))\n\
+          \    kpi.log_metric(\"Mean Absolute Percentage Error\", float(mape))\n \
+          \   kpi.log_metric(\"Mean Squared Error\", float(mse))\n    kpi.log_metric(\"\
+          Root Mean Squared Error\", float(rmse))\n\n    actual_metric_value = model_metrics.get(deployment_metric)\n\
+          \n    if deployment_metric in [\"r2\"]:\n        deploy_flag = \"True\"\
+          \ if actual_metric_value >= deployment_metric_threshold else \"False\"\n\
+          \    else:\n        deploy_flag = \"True\" if actual_metric_value <= deployment_metric_threshold\
+          \ else \"False\"\n\n    return (deploy_flag,)\n\n"
+        image: python:3.11
+    exec-preprocess-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - preprocess_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'pyarrow'\
+          \ 'fsspec' 'gcsfs' 'scikit-learn' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef preprocess_data(train_size: float,\n                    test_size:\
+          \ float,\n                    valid_size: float,\n                    train_data:\
+          \ Output[Dataset],\n                    valid_data: Output[Dataset],\n \
+          \                   test_data: Output[Dataset],\n                    input_data:\
+          \ Input[Dataset]):\n\n    import numpy as np\n    import pandas as pd\n\
+          \    from sklearn.model_selection import train_test_split\n\n    data =\
+          \ pd.read_csv(input_data.path)\n\n    modelling_columns = [\"season\", \"\
+          yr\", \"mnth\", \"hr\", \"holiday\", \"weekday\",\n                    \
+          \     \"workingday\", \"weathersit\", \"temp\", \"atemp\", \"hum\",\n  \
+          \                       \"windspeed\", \"casual\", \"registered\", \"cnt\"\
+          ]\n\n    data = data[modelling_columns]\n\n    train_valid_data, test_data_df\
+          \ = train_test_split(data, test_size=test_size, random_state=42)\n\n   \
+          \ adjusted_valid_size = valid_size / (1 - test_size)\n\n    train_data_df,\
+          \ valid_data_df = train_test_split(train_valid_data, test_size=adjusted_valid_size,\
+          \ random_state=42)\n\n    train_data_df.to_csv(train_data.path, index=False)\n\
+          \    valid_data_df.to_csv(valid_data.path, index=False)\n    test_data_df.to_csv(test_data.path,\
+          \ index=False)\n\n"
+        image: python:3.11
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'pyarrow'\
+          \ 'scikit-learn' 'fsspec' 'gcsfs' 'xgboost' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(\n    train_data: Input[Dataset],\n    model: Output[Model]\n\
+          ):\n    print(f\"train_data: {train_data}\")\n    print(f\"model: {model}\"\
+          )\n\n    from xgboost import XGBRegressor\n    import pandas as pd\n   \
+          \ import pickle\n    import sklearn\n\n    train_ds = pd.read_csv(train_data.path)\n\
+          \    my_model = XGBRegressor()\n\n    target = \"cnt\"\n\n    x_train =\
+          \ train_ds.drop(columns=target, axis=1)\n    y_train = train_ds[target]\n\
+          \n    my_model.fit(x_train, y_train)\n    model.metadata[\"model_name\"\
+          ] = \"XGBRegressor\"\n    model.metadata[\"framework\"] = \"xgboost\"\n\
+          \    model.metadata[\"framework_version\"] = sklearn.__version__\n    file_name\
+          \ = model.path + f\".pkl\"\n\n    with open(file_name, 'wb') as file:\n\
+          \        pickle.dump(my_model, file)\n\n"
+        image: python:3.11
+    exec-upload-dataset:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - upload_dataset
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'google-cloud-bigquery'\
+          \ 'db-dtypes' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef upload_dataset(query: str, project_id: str, df: Output[Dataset]):\n\
+          \    from google.cloud import bigquery\n    import pandas as pd\n\n    client\
+          \ = bigquery.Client(project=project_id)\n\n    query_job = client.query(query)\n\
+          \    data = query_job.result().to_dataframe()\n\n    data.to_csv(df.path,\
+          \ index=False)\n\n"
+        image: python:3.11
+pipelineInfo:
+  description: An example pipeline that performs data download, preprocessing, training,
+    and evaluation.
+  name: machine-learning-pipeline
+root:
+  dag:
+    outputs:
+      artifacts:
+        evaluate-model-kpi:
+          artifactSelectors:
+          - outputArtifactKey: kpi
+            producerSubtask: evaluate-model
+    tasks:
+      evaluate-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-model
+        dependentTasks:
+        - preprocess-data
+        - train-model
+        inputs:
+          artifacts:
+            model:
+              taskOutputArtifact:
+                outputArtifactKey: model
+                producerTask: train-model
+            test_data:
+              taskOutputArtifact:
+                outputArtifactKey: test_data
+                producerTask: preprocess-data
+          parameters:
+            deployment_metric:
+              componentInputParameter: deployment_metric
+            deployment_metric_threshold:
+              componentInputParameter: deployment_metric_threshold
+            target_column_name:
+              componentInputParameter: target_column_name
+        taskInfo:
+          name: evaluate-model
+      preprocess-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-preprocess-data
+        dependentTasks:
+        - upload-dataset
+        inputs:
+          artifacts:
+            input_data:
+              taskOutputArtifact:
+                outputArtifactKey: df
+                producerTask: upload-dataset
+          parameters:
+            test_size:
+              componentInputParameter: test_size
+            train_size:
+              componentInputParameter: train_size
+            valid_size:
+              componentInputParameter: valid_size
+        taskInfo:
+          name: preprocess-data
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - preprocess-data
+        inputs:
+          artifacts:
+            train_data:
+              taskOutputArtifact:
+                outputArtifactKey: train_data
+                producerTask: preprocess-data
+        taskInfo:
+          name: train-model
+      upload-dataset:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-upload-dataset
+        inputs:
+          parameters:
+            project_id:
+              componentInputParameter: project_id
+            query:
+              componentInputParameter: query
+        taskInfo:
+          name: upload-dataset
+  inputDefinitions:
+    parameters:
+      deployment_metric:
+        parameterType: STRING
+      deployment_metric_threshold:
+        parameterType: NUMBER_DOUBLE
+      project_id:
+        parameterType: STRING
+      query:
+        parameterType: STRING
+      target_column_name:
+        parameterType: STRING
+      test_size:
+        parameterType: NUMBER_DOUBLE
+      train_size:
+        parameterType: NUMBER_DOUBLE
+      valid_size:
+        parameterType: NUMBER_DOUBLE
+  outputDefinitions:
+    artifacts:
+      evaluate-model-kpi:
+        artifactType:
+          schemaTitle: system.Metrics
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.7.0
