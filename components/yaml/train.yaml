@@ -1,0 +1,98 @@
+# PIPELINE DEFINITION
+# Name: train-model
+# Inputs:
+#    train_data: system.Dataset
+# Outputs:
+#    model: system.Model
+components:
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'pyarrow'\
+          \ 'scikit-learn' 'fsspec' 'gcsfs' 'xgboost' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(\n    train_data: Input[Dataset],\n    model: Output[Model]\n\
+          ):\n    print(f\"train_data: {train_data}\")\n    print(f\"model: {model}\"\
+          )\n\n    from xgboost import XGBRegressor\n    import pandas as pd\n   \
+          \ import pickle\n    import sklearn\n\n    train_ds = pd.read_csv(train_data.path)\n\
+          \    my_model = XGBRegressor()\n\n    target = \"cnt\"\n\n    x_train =\
+          \ train_ds.drop(columns=target, axis=1)\n    y_train = train_ds[target]\n\
+          \n    my_model.fit(x_train, y_train)\n    model.metadata[\"model_name\"\
+          ] = \"XGBRegressor\"\n    model.metadata[\"framework\"] = \"xgboost\"\n\
+          \    model.metadata[\"framework_version\"] = sklearn.__version__\n    file_name\
+          \ = model.path + f\".pkl\"\n\n    with open(file_name, 'wb') as file:\n\
+          \        pickle.dump(my_model, file)\n\n"
+        image: python:3.11
+pipelineInfo:
+  name: train-model
+root:
+  dag:
+    outputs:
+      artifacts:
+        model:
+          artifactSelectors:
+          - outputArtifactKey: model
+            producerSubtask: train-model
+    tasks:
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        inputs:
+          artifacts:
+            train_data:
+              componentInputArtifact: train_data
+        taskInfo:
+          name: train-model
+  inputDefinitions:
+    artifacts:
+      train_data:
+        artifactType:
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+  outputDefinitions:
+    artifacts:
+      model:
+        artifactType:
+          schemaTitle: system.Model
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.7.0

@@ -1,0 +1,95 @@
+# PIPELINE DEFINITION
+# Name: upload-dataset
+# Inputs:
+#    project_id: str
+#    query: str
+# Outputs:
+#    df: system.Dataset
+components:
+  comp-upload-dataset:
+    executorLabel: exec-upload-dataset
+    inputDefinitions:
+      parameters:
+        project_id:
+          parameterType: STRING
+        query:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        df:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-upload-dataset:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - upload_dataset
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'google-cloud-bigquery'\
+          \ 'db-dtypes' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef upload_dataset(query: str, project_id: str, df: Output[Dataset]):\n\
+          \    from google.cloud import bigquery\n    import pandas as pd\n\n    client\
+          \ = bigquery.Client(project=project_id)\n\n    query_job = client.query(query)\n\
+          \    data = query_job.result().to_dataframe()\n\n    data.to_csv(df.path,\
+          \ index=False)\n\n"
+        image: python:3.11
+pipelineInfo:
+  name: upload-dataset
+root:
+  dag:
+    outputs:
+      artifacts:
+        df:
+          artifactSelectors:
+          - outputArtifactKey: df
+            producerSubtask: upload-dataset
+    tasks:
+      upload-dataset:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-upload-dataset
+        inputs:
+          parameters:
+            project_id:
+              componentInputParameter: project_id
+            query:
+              componentInputParameter: query
+        taskInfo:
+          name: upload-dataset
+  inputDefinitions:
+    parameters:
+      project_id:
+        parameterType: STRING
+      query:
+        parameterType: STRING
+  outputDefinitions:
+    artifacts:
+      df:
+        artifactType:
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.7.0
