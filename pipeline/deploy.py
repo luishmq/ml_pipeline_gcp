@@ -8,7 +8,7 @@ from utils.globals import PIPELINE_ROOT, QUERY
 
 aiplatform.init(
     project='annular-weaver-428312-s3',
-    location='us-central1'  
+    location='us-central1'
 )
 
 job = aiplatform.PipelineJob(

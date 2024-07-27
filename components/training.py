@@ -1,4 +1,4 @@
-from kfp.dsl import component, Input, Output, Dataset, Model, Metrics
+from kfp.dsl import component, Input, Output, Dataset, Model
 
 @component(
     packages_to_install=["pandas", "pyarrow", "scikit-learn", "fsspec", "gcsfs", "xgboost"],
@@ -19,17 +19,17 @@ def train_model(
 
     train_ds = pd.read_csv(train_data.path)
     my_model = XGBRegressor()
-    
+
     target = "cnt"
-    
+
     x_train = train_ds.drop(columns=target, axis=1)
     y_train = train_ds[target]
-    
+
     my_model.fit(x_train, y_train)
     model.metadata["model_name"] = "XGBRegressor"
     model.metadata["framework"] = "xgboost"
     model.metadata["framework_version"] = sklearn.__version__
-    file_name = model.path + f".pkl"
-    
+    file_name = model.path + ".pkl"
+
     with open(file_name, 'wb') as file:
         pickle.dump(my_model, file)

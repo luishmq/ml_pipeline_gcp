@@ -1,7 +1,7 @@
 import kfp
 import sys
 import os
-from kfp.dsl import pipeline, Input, Output, Dataset, Model, Metrics
+from kfp.dsl import pipeline
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -37,7 +37,7 @@ def ml_pipeline(
         train_data=preprocess_task.outputs['train_data']
     )
 
-    evaluate_task = evaluate_model(
+    evaluate_model(
         test_data=preprocess_task.outputs['test_data'],
         model=train_task.outputs['model'],
         target_column_name=target_column_name,
