@@ -1,8 +1,8 @@
 # PIPELINE DEFINITION
 # Name: upload-dataset
 # Inputs:
-#    project_id: str
-#    query: str
+#    bucket_name: str
+#    source_blob_name: str
 # Outputs:
 #    df: system.Dataset
 components:
@@ -10,9 +10,9 @@ components:
     executorLabel: exec-upload-dataset
     inputDefinitions:
       parameters:
-        project_id:
+        bucket_name:
           parameterType: STRING
-        query:
+        source_blob_name:
           parameterType: STRING
     outputDefinitions:
       artifacts:
@@ -36,8 +36,8 @@ deploymentSpec:
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
           \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
           \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
-          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'google-cloud-bigquery'\
-          \ 'db-dtypes' && \"$0\" \"$@\"\n"
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'google-cloud-storage'\
+          \ && \"$0\" \"$@\"\n"
         - sh
         - -ec
         - 'program_path=$(mktemp -d)
@@ -49,11 +49,12 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef upload_dataset(query: str, project_id: str, df: Output[Dataset]):\n\
-          \    from google.cloud import bigquery\n    import pandas as pd\n\n    client\
-          \ = bigquery.Client(project=project_id)\n\n    query_job = client.query(query)\n\
-          \    data = query_job.result().to_dataframe()\n\n    data.to_csv(df.path,\
-          \ index=False)\n\n"
+          \ *\n\ndef upload_dataset(bucket_name: str, source_blob_name: str, df: Output[Dataset]):\n\
+          \    from google.cloud import storage\n    import pandas as pd\n    from\
+          \ io import StringIO\n\n    storage_client = storage.Client()\n\n    bucket\
+          \ = storage_client.bucket(bucket_name)\n    blob = bucket.blob(source_blob_name)\n\
+          \n    content = blob.download_as_string()\n    data = pd.read_csv(StringIO(content.decode('utf-8')))\n\
+          \n    data.to_csv(df.path, index=False)\n\n"
         image: python:3.11
 pipelineInfo:
   name: upload-dataset
@@ -73,17 +74,17 @@ root:
           name: comp-upload-dataset
         inputs:
           parameters:
-            project_id:
-              componentInputParameter: project_id
-            query:
-              componentInputParameter: query
+            bucket_name:
+              componentInputParameter: bucket_name
+            source_blob_name:
+              componentInputParameter: source_blob_name
         taskInfo:
           name: upload-dataset
   inputDefinitions:
     parameters:
-      project_id:
+      bucket_name:
         parameterType: STRING
-      query:
+      source_blob_name:
         parameterType: STRING
   outputDefinitions:
     artifacts:
