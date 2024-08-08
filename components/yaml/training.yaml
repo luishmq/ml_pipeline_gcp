@@ -49,9 +49,9 @@ deploymentSpec:
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef training(train_data: Input[Dataset], trained_model: Output[Model]):\n\
-          \    import pandas as pd\n    from pycaret.regression import setup, create_model,\
-          \ tune_model, save_model, compare_models\n\n    data = pd.read_csv(train_data.path)\n\
-          \n    regression = setup(data, target='price', normalize=True, normalize_method='minmax',\
+          \    import pandas as pd\n    from pycaret.regression import setup, tune_model,\
+          \ save_model, compare_models\n\n    data = pd.read_csv(train_data.path)\n\
+          \n    setup(data, target='price', normalize=True, normalize_method='minmax',\
           \ ignore_features=['cityCode'] , session_id=123) \n\n    best_model = compare_models()\n\
           \n    tuned_model = tune_model(best_model)\n\n    save_model(tuned_model,\
           \ trained_model.path)\n\n"
