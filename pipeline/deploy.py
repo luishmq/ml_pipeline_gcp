@@ -17,7 +17,7 @@ job = aiplatform.PipelineJob(
     pipeline_root=PIPELINE_ROOT,
     parameter_values={
         "bucket_name": "data_pipeline_paris",
-        "source_blob_name": "ParisHousing.csv",
+        "source_blob_name": "modified_data.csv",
     },
 )
 
