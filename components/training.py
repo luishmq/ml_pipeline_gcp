@@ -1,35 +1,16 @@
-from kfp.dsl import component, Input, Output, Dataset, Model
+from kfp.dsl import component, Output, Dataset, Input, Model
 
-@component(
-    packages_to_install=["pandas", "pyarrow", "scikit-learn", "fsspec", "gcsfs", "xgboost"],
-    base_image="python:3.11",
-    output_component_file="components/yaml/train.yaml"
-)
-def train_model(
-    train_data: Input[Dataset],
-    model: Output[Model]
-):
-    print(f"train_data: {train_data}")
-    print(f"model: {model}")
-
-    from xgboost import XGBRegressor
+@component(base_image="python:3.11", output_component_file="../components/yaml/preprocess_data.yaml", packages_to_install=["pandas", "pycaret"])
+def training(train_data: Input[Dataset], trained_model: Output[Model]):
     import pandas as pd
-    import pickle
-    import sklearn
+    from pycaret.regression import setup, tune_model, save_model, compare_models
 
-    train_ds = pd.read_csv(train_data.path)
-    my_model = XGBRegressor()
+    data = pd.read_csv(train_data.path)
+    
+    setup(data, target='price', normalize=True, normalize_method='minmax', ignore_features=['cityCode'] , session_id=123) 
+    
+    best_model = compare_models()
 
-    target = "cnt"
+    tuned_model = tune_model(best_model)
 
-    x_train = train_ds.drop(columns=target, axis=1)
-    y_train = train_ds[target]
-
-    my_model.fit(x_train, y_train)
-    model.metadata["model_name"] = "XGBRegressor"
-    model.metadata["framework"] = "xgboost"
-    model.metadata["framework_version"] = sklearn.__version__
-    file_name = model.path + ".pkl"
-
-    with open(file_name, 'wb') as file:
-        pickle.dump(my_model, file)
+    save_model(tuned_model, trained_model.path)

@@ -1,53 +1,33 @@
 # PIPELINE DEFINITION
-# Name: preprocess-data
+# Name: training
 # Inputs:
-#    input_data: system.Dataset
-#    test_size: float
-#    train_size: float
-#    valid_size: float
-# Outputs:
-#    test_data: system.Dataset
 #    train_data: system.Dataset
-#    valid_data: system.Dataset
+# Outputs:
+#    trained_model: system.Model
 components:
-  comp-preprocess-data:
-    executorLabel: exec-preprocess-data
+  comp-training:
+    executorLabel: exec-training
     inputDefinitions:
       artifacts:
-        input_data:
-          artifactType:
-            schemaTitle: system.Dataset
-            schemaVersion: 0.0.1
-      parameters:
-        test_size:
-          parameterType: NUMBER_DOUBLE
-        train_size:
-          parameterType: NUMBER_DOUBLE
-        valid_size:
-          parameterType: NUMBER_DOUBLE
-    outputDefinitions:
-      artifacts:
-        test_data:
-          artifactType:
-            schemaTitle: system.Dataset
-            schemaVersion: 0.0.1
         train_data:
           artifactType:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
-        valid_data:
+    outputDefinitions:
+      artifacts:
+        trained_model:
           artifactType:
-            schemaTitle: system.Dataset
+            schemaTitle: system.Model
             schemaVersion: 0.0.1
 deploymentSpec:
   executors:
-    exec-preprocess-data:
+    exec-training:
       container:
         args:
         - --executor_input
         - '{{$}}'
         - --function_to_execute
-        - preprocess_data
+        - training
         command:
         - sh
         - -c
@@ -55,8 +35,8 @@ deploymentSpec:
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
           \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
           \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
-          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'pyarrow'\
-          \ 'fsspec' 'gcsfs' 'scikit-learn' && \"$0\" \"$@\"\n"
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'pycaret'\
+          \ && \"$0\" \"$@\"\n"
         - sh
         - -ec
         - 'program_path=$(mktemp -d)
@@ -68,87 +48,47 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef preprocess_data(train_size: float,\n                    test_size:\
-          \ float,\n                    valid_size: float,\n                    train_data:\
-          \ Output[Dataset],\n                    valid_data: Output[Dataset],\n \
-          \                   test_data: Output[Dataset],\n                    input_data:\
-          \ Input[Dataset]):\n\n    import numpy as np\n    import pandas as pd\n\
-          \    from sklearn.model_selection import train_test_split\n\n    data =\
-          \ pd.read_csv(input_data.path)\n\n    modelling_columns = [\"season\", \"\
-          yr\", \"mnth\", \"hr\", \"holiday\", \"weekday\",\n                    \
-          \     \"workingday\", \"weathersit\", \"temp\", \"atemp\", \"hum\",\n  \
-          \                       \"windspeed\", \"casual\", \"registered\", \"cnt\"\
-          ]\n\n    data = data[modelling_columns]\n\n    train_valid_data, test_data_df\
-          \ = train_test_split(data, test_size=test_size, random_state=42)\n\n   \
-          \ adjusted_valid_size = valid_size / (1 - test_size)\n\n    train_data_df,\
-          \ valid_data_df = train_test_split(train_valid_data, test_size=adjusted_valid_size,\
-          \ random_state=42)\n\n    train_data_df.to_csv(train_data.path, index=False)\n\
-          \    valid_data_df.to_csv(valid_data.path, index=False)\n    test_data_df.to_csv(test_data.path,\
-          \ index=False)\n\n"
+          \ *\n\ndef training(train_data: Input[Dataset], trained_model: Output[Model]):\n\
+          \    import pandas as pd\n    from pycaret.regression import setup, create_model,\
+          \ tune_model, save_model, compare_models\n\n    data = pd.read_csv(train_data.path)\n\
+          \n    regression = setup(data, target='price', normalize=True, normalize_method='minmax',\
+          \ ignore_features=['cityCode'] , session_id=123) \n\n    best_model = compare_models()\n\
+          \n    tuned_model = tune_model(best_model)\n\n    save_model(tuned_model,\
+          \ trained_model.path)\n\n"
         image: python:3.11
 pipelineInfo:
-  name: preprocess-data
+  name: training
 root:
   dag:
     outputs:
       artifacts:
-        test_data:
+        trained_model:
           artifactSelectors:
-          - outputArtifactKey: test_data
-            producerSubtask: preprocess-data
-        train_data:
-          artifactSelectors:
-          - outputArtifactKey: train_data
-            producerSubtask: preprocess-data
-        valid_data:
-          artifactSelectors:
-          - outputArtifactKey: valid_data
-            producerSubtask: preprocess-data
+          - outputArtifactKey: trained_model
+            producerSubtask: training
     tasks:
-      preprocess-data:
+      training:
         cachingOptions:
           enableCache: true
         componentRef:
-          name: comp-preprocess-data
+          name: comp-training
         inputs:
           artifacts:
-            input_data:
-              componentInputArtifact: input_data
-          parameters:
-            test_size:
-              componentInputParameter: test_size
-            train_size:
-              componentInputParameter: train_size
-            valid_size:
-              componentInputParameter: valid_size
+            train_data:
+              componentInputArtifact: train_data
         taskInfo:
-          name: preprocess-data
+          name: training
   inputDefinitions:
     artifacts:
-      input_data:
-        artifactType:
-          schemaTitle: system.Dataset
-          schemaVersion: 0.0.1
-    parameters:
-      test_size:
-        parameterType: NUMBER_DOUBLE
-      train_size:
-        parameterType: NUMBER_DOUBLE
-      valid_size:
-        parameterType: NUMBER_DOUBLE
-  outputDefinitions:
-    artifacts:
-      test_data:
-        artifactType:
-          schemaTitle: system.Dataset
-          schemaVersion: 0.0.1
       train_data:
         artifactType:
           schemaTitle: system.Dataset
           schemaVersion: 0.0.1
-      valid_data:
+  outputDefinitions:
+    artifacts:
+      trained_model:
         artifactType:
-          schemaTitle: system.Dataset
+          schemaTitle: system.Model
           schemaVersion: 0.0.1
 schemaVersion: 2.1.0
 sdkVersion: kfp-2.7.0

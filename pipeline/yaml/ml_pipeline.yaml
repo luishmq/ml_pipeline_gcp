@@ -9,7 +9,7 @@ components:
     executorLabel: exec-evaluate-model
     inputDefinitions:
       artifacts:
-        input_data:
+        test_data:
           artifactType:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
@@ -23,11 +23,29 @@ components:
           artifactType:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
+  comp-split-data:
+    executorLabel: exec-split-data
+    inputDefinitions:
+      artifacts:
+        dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        test_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
   comp-training:
     executorLabel: exec-training
     inputDefinitions:
       artifacts:
-        input_data:
+        train_data:
           artifactType:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
@@ -80,16 +98,50 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef evaluate_model(input_data: Input[Dataset], trained_model: Input[Model],\
+          \ *\n\ndef evaluate_model(test_data: Input[Dataset], trained_model: Input[Model],\
           \ evaluation_report: Output[Dataset]):\n    import pandas as pd\n    from\
-          \ pycaret.regression import RegressionExperiment, load_model, predict_model\n\
-          \    from sklearn.metrics import mean_absolute_error, mean_squared_error,\
-          \ r2_score\n\n    data = pd.read_csv(input_data.path)\n\n    model = load_model(trained_model.path)\n\
+          \ pycaret.regression import load_model, predict_model\n    from sklearn.metrics\
+          \ import mean_absolute_error, mean_squared_error, r2_score\n\n    data =\
+          \ pd.read_csv(test_data.path)\n\n    model = load_model(trained_model.path)\n\
           \n    predictions = predict_model(model, data=data)\n\n    y_true = data['price']\n\
           \    y_pred = predictions['prediction_label']\n\n    mae = mean_absolute_error(y_true,\
           \ y_pred)\n    mse = mean_squared_error(y_true, y_pred)\n    r2 = r2_score(y_true,\
           \ y_pred)\n\n    report = pd.DataFrame({\n        'Metric': ['MAE', 'MSE',\
           \ 'R2'],\n        'Value': [mae, mse, r2]\n    })\n\n    report.to_csv(evaluation_report.path,\
+          \ index=False)\n\n"
+        image: python:3.11
+    exec-split-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - split_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef split_data(dataset: Input[Dataset], train_data: Output[Dataset],\
+          \ test_data: Output[Dataset]):\n    import pandas as pd\n    from sklearn.model_selection\
+          \ import train_test_split\n\n    data = pd.read_csv(dataset.path)\n\n  \
+          \  train, test = train_test_split(data, test_size=0.2, random_state=42)\n\
+          \n    train.to_csv(train_data.path, index=False)\n    test.to_csv(test_data.path,\
           \ index=False)\n\n"
         image: python:3.11
     exec-training:
@@ -119,12 +171,13 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef training(input_data: Input[Dataset], trained_model: Output[Model]):\n\
-          \    import pandas as pd\n    from pycaret.regression import RegressionExperiment\n\
-          \n    data = pd.read_csv(input_data.path)\n\n    s = RegressionExperiment()\n\
-          \n    s.setup(data, target='price', normalize=True, normalize_method='minmax',\
-          \ ignore_features=['cityCode'] , session_id=123) \n\n    best_model = s.compare_models()\n\
-          \n    s.save_model(best_model, trained_model.path)\n\n"
+          \ *\n\ndef training(train_data: Input[Dataset], trained_model: Output[Model]):\n\
+          \    import pandas as pd\n    from pycaret.regression import setup, create_model,\
+          \ tune_model, save_model, compare_models\n\n    data = pd.read_csv(train_data.path)\n\
+          \n    regression = setup(data, target='price', normalize=True, normalize_method='minmax',\
+          \ ignore_features=['cityCode'] , session_id=123) \n\n    best_model = compare_models()\n\
+          \n    tuned_model = tune_model(best_model)\n\n    save_model(tuned_model,\
+          \ trained_model.path)\n\n"
         image: python:3.11
     exec-upload-dataset:
       container:
@@ -173,33 +226,48 @@ root:
         componentRef:
           name: comp-evaluate-model
         dependentTasks:
+        - split-data
         - training
-        - upload-dataset
         inputs:
           artifacts:
-            input_data:
+            test_data:
               taskOutputArtifact:
-                outputArtifactKey: df
-                producerTask: upload-dataset
+                outputArtifactKey: test_data
+                producerTask: split-data
             trained_model:
               taskOutputArtifact:
                 outputArtifactKey: trained_model
                 producerTask: training
         taskInfo:
           name: evaluate-model
+      split-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-split-data
+        dependentTasks:
+        - upload-dataset
+        inputs:
+          artifacts:
+            dataset:
+              taskOutputArtifact:
+                outputArtifactKey: df
+                producerTask: upload-dataset
+        taskInfo:
+          name: split-data
       training:
         cachingOptions:
           enableCache: true
         componentRef:
           name: comp-training
         dependentTasks:
-        - upload-dataset
+        - split-data
         inputs:
           artifacts:
-            input_data:
+            train_data:
               taskOutputArtifact:
-                outputArtifactKey: df
-                producerTask: upload-dataset
+                outputArtifactKey: train_data
+                producerTask: split-data
         taskInfo:
           name: training
       upload-dataset:

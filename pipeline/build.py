@@ -6,6 +6,7 @@ from kfp.dsl import pipeline
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from components.download_data import upload_dataset
+from components.split import split_data
 from components.training import training
 from components.evaluate_model import evaluate_model
 
@@ -22,12 +23,16 @@ def ml_pipeline(
         source_blob_name=source_blob_name
     )
 
+    split_task = split_data(
+        dataset=download_task.outputs['df']
+    )
+
     training_task = training(
-        input_data=download_task.outputs['df']
+        train_data=split_task.outputs['train_data']
     )
 
     evaluate_model(
-        input_data=download_task.outputs['df'],
+        test_data=split_task.outputs['test_data'],
         trained_model=training_task.outputs['trained_model']
     )
 

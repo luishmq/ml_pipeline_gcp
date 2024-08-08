@@ -1,33 +1,38 @@
 # PIPELINE DEFINITION
-# Name: train-model
+# Name: split-data
 # Inputs:
-#    train_data: system.Dataset
+#    dataset: system.Dataset
 # Outputs:
-#    model: system.Model
+#    test_data: system.Dataset
+#    train_data: system.Dataset
 components:
-  comp-train-model:
-    executorLabel: exec-train-model
+  comp-split-data:
+    executorLabel: exec-split-data
     inputDefinitions:
       artifacts:
-        train_data:
+        dataset:
           artifactType:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
     outputDefinitions:
       artifacts:
-        model:
+        test_data:
           artifactType:
-            schemaTitle: system.Model
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        train_data:
+          artifactType:
+            schemaTitle: system.Dataset
             schemaVersion: 0.0.1
 deploymentSpec:
   executors:
-    exec-train-model:
+    exec-split-data:
       container:
         args:
         - --executor_input
         - '{{$}}'
         - --function_to_execute
-        - train_model
+        - split_data
         command:
         - sh
         - -c
@@ -35,8 +40,8 @@ deploymentSpec:
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
           \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
           \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
-          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'pyarrow'\
-          \ 'scikit-learn' 'fsspec' 'gcsfs' 'xgboost' && \"$0\" \"$@\"\n"
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ && \"$0\" \"$@\"\n"
         - sh
         - -ec
         - 'program_path=$(mktemp -d)
@@ -48,51 +53,54 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef train_model(\n    train_data: Input[Dataset],\n    model: Output[Model]\n\
-          ):\n    print(f\"train_data: {train_data}\")\n    print(f\"model: {model}\"\
-          )\n\n    from xgboost import XGBRegressor\n    import pandas as pd\n   \
-          \ import pickle\n    import sklearn\n\n    train_ds = pd.read_csv(train_data.path)\n\
-          \    my_model = XGBRegressor()\n\n    target = \"cnt\"\n\n    x_train =\
-          \ train_ds.drop(columns=target, axis=1)\n    y_train = train_ds[target]\n\
-          \n    my_model.fit(x_train, y_train)\n    model.metadata[\"model_name\"\
-          ] = \"XGBRegressor\"\n    model.metadata[\"framework\"] = \"xgboost\"\n\
-          \    model.metadata[\"framework_version\"] = sklearn.__version__\n    file_name\
-          \ = model.path + f\".pkl\"\n\n    with open(file_name, 'wb') as file:\n\
-          \        pickle.dump(my_model, file)\n\n"
+          \ *\n\ndef split_data(dataset: Input[Dataset], train_data: Output[Dataset],\
+          \ test_data: Output[Dataset]):\n    import pandas as pd\n    from sklearn.model_selection\
+          \ import train_test_split\n\n    data = pd.read_csv(dataset.path)\n\n  \
+          \  train, test = train_test_split(data, test_size=0.2, random_state=42)\n\
+          \n    train.to_csv(train_data.path, index=False)\n    test.to_csv(test_data.path,\
+          \ index=False)\n\n"
         image: python:3.11
 pipelineInfo:
-  name: train-model
+  name: split-data
 root:
   dag:
     outputs:
       artifacts:
-        model:
+        test_data:
           artifactSelectors:
-          - outputArtifactKey: model
-            producerSubtask: train-model
+          - outputArtifactKey: test_data
+            producerSubtask: split-data
+        train_data:
+          artifactSelectors:
+          - outputArtifactKey: train_data
+            producerSubtask: split-data
     tasks:
-      train-model:
+      split-data:
         cachingOptions:
           enableCache: true
         componentRef:
-          name: comp-train-model
+          name: comp-split-data
         inputs:
           artifacts:
-            train_data:
-              componentInputArtifact: train_data
+            dataset:
+              componentInputArtifact: dataset
         taskInfo:
-          name: train-model
+          name: split-data
   inputDefinitions:
     artifacts:
-      train_data:
+      dataset:
         artifactType:
           schemaTitle: system.Dataset
           schemaVersion: 0.0.1
   outputDefinitions:
     artifacts:
-      model:
+      test_data:
         artifactType:
-          schemaTitle: system.Model
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+      train_data:
+        artifactType:
+          schemaTitle: system.Dataset
           schemaVersion: 0.0.1
 schemaVersion: 2.1.0
 sdkVersion: kfp-2.7.0

@@ -1,7 +1,7 @@
 # PIPELINE DEFINITION
 # Name: evaluate-model
 # Inputs:
-#    input_data: system.Dataset
+#    test_data: system.Dataset
 #    trained_model: system.Model
 # Outputs:
 #    evaluation_report: system.Dataset
@@ -10,7 +10,7 @@ components:
     executorLabel: exec-evaluate-model
     inputDefinitions:
       artifacts:
-        input_data:
+        test_data:
           artifactType:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
@@ -53,11 +53,11 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef evaluate_model(input_data: Input[Dataset], trained_model: Input[Model],\
+          \ *\n\ndef evaluate_model(test_data: Input[Dataset], trained_model: Input[Model],\
           \ evaluation_report: Output[Dataset]):\n    import pandas as pd\n    from\
-          \ pycaret.regression import RegressionExperiment, load_model, predict_model\n\
-          \    from sklearn.metrics import mean_absolute_error, mean_squared_error,\
-          \ r2_score\n\n    data = pd.read_csv(input_data.path)\n\n    model = load_model(trained_model.path)\n\
+          \ pycaret.regression import load_model, predict_model\n    from sklearn.metrics\
+          \ import mean_absolute_error, mean_squared_error, r2_score\n\n    data =\
+          \ pd.read_csv(test_data.path)\n\n    model = load_model(trained_model.path)\n\
           \n    predictions = predict_model(model, data=data)\n\n    y_true = data['price']\n\
           \    y_pred = predictions['prediction_label']\n\n    mae = mean_absolute_error(y_true,\
           \ y_pred)\n    mse = mean_squared_error(y_true, y_pred)\n    r2 = r2_score(y_true,\
@@ -83,15 +83,15 @@ root:
           name: comp-evaluate-model
         inputs:
           artifacts:
-            input_data:
-              componentInputArtifact: input_data
+            test_data:
+              componentInputArtifact: test_data
             trained_model:
               componentInputArtifact: trained_model
         taskInfo:
           name: evaluate-model
   inputDefinitions:
     artifacts:
-      input_data:
+      test_data:
         artifactType:
           schemaTitle: system.Dataset
           schemaVersion: 0.0.1
