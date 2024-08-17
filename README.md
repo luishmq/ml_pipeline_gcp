@@ -1,6 +1,6 @@
 # Paris Housing Price Prediction Pipeline 🏠
 
-![](src/imgs/segment.png)
+![](images/house.avif)
 
 The Paris Housing Price Prediction project leverages advanced machine learning techniques to analyze and predict property prices based on various features such as location, size, number of rooms, and more.
 
@@ -52,7 +52,7 @@ The main objectives of this project are:
 
 # 3.0 Solution Strategy
 
-![](src/imgs/strategy.png)
+![](images/pipeline.png)
 
 The solution strategy for the Paris Housing Price Prediction project is based on a structured machine learning pipeline, as depicted in the provided image. The pipeline is designed to streamline the process from data ingestion to model evaluation, ensuring that each step is systematically executed for optimal results. Here’s a breakdown of the strategy:
 
@@ -69,7 +69,7 @@ These categories were then converted into binary columns, allowing the model to 
 
 The original made column was dropped after this transformation to streamline the dataset and avoid redundancy.
 
-![](src/imgs/strategy.png)
+![](images/feature.png)
 
 # 5.0 Machine Learning 
 
@@ -93,7 +93,7 @@ These results indicate that the model performs exceptionally well in predicting 
 
 # 6.0 Cloud Functions CI/CD 
 
-![](src/imgs/strategy.png)
+![](images/functions.png)
 
 A Python script was created in Cloud Functions to automate the triggering of a machine learning pipeline on Google Cloud Platform whenever a new CSV file is uploaded to a specified Cloud Storage bucket.
 Function Workflow:
